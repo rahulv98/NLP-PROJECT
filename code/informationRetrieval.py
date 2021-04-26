@@ -2,13 +2,16 @@ from util import *
 
 # Add your import statements here
 import numpy as np
+from sklearn.decomposition import TruncatedSVD
 
 
 
 class InformationRetrieval():
 
-	def __init__(self):
+	def __init__(self, LSA=True, N=400):
 		self.index = None
+		self.LSA = LSA
+		self.N = N
 
 	def buildIndex(self, docs, docIDs):
 		"""
@@ -100,8 +103,19 @@ class InformationRetrieval():
 		TFIDF_docs /= np.linalg.norm(TFIDF_docs, axis=0, keepdims=True) + 1e-4
 		TFIDF_queries /= np.linalg.norm(TFIDF_queries, axis=0, keepdims=True) + 1e-4
 
+		doc_vecs = TFIDF_docs
+		query_vecs = TFIDF_queries
+
+		#Dimensionality reduction using LSA
+		if self.LSA:
+			svd = TruncatedSVD(self.N)
+			svd.fit(TFIDF_docs.T)
+			
+			doc_vecs = svd.transform(TFIDF_docs.T).T
+			query_vecs = svd.transform(TFIDF_queries.T).T
+
 		#Similarity Calculation
-		similarity = np.matmul(TFIDF_queries.T, TFIDF_docs)
+		similarity = np.matmul(query_vecs.T, doc_vecs)
 
 		#Ranking
 		doc_IDs_ordered = (np.argsort(-similarity, axis=1) + 1).tolist()
