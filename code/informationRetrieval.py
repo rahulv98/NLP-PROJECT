@@ -8,10 +8,11 @@ from sklearn.decomposition import TruncatedSVD
 
 class InformationRetrieval():
 
-	def __init__(self, LSA=True, N=400):
+	def __init__(self, LSA=True, N=400, k=2):
 		self.index = None
 		self.LSA = LSA
 		self.N = N
+		self.k = k
 
 	def buildIndex(self, docs, docIDs):
 		"""
@@ -36,6 +37,9 @@ class InformationRetrieval():
 
 		index = {}
 
+		if self.k > 1:
+			docs = nGramConverter(docs, self.k)
+
 		for i, doc in enumerate(docs):
 			for sent in doc:
 				for word in sent:
@@ -50,6 +54,7 @@ class InformationRetrieval():
 		self.index = index
 		self.D = len(docs)
 		self.Vocab = list(index.keys())
+		print(self.D, len(self.Vocab))
 
 	def rank(self, queries):
 		"""
@@ -74,6 +79,10 @@ class InformationRetrieval():
 		#Fill in code here
 
 		#Initialising 
+
+		if self.k > 1:
+			queries = nGramConverter(queries, self.k)
+
 		TFIDF_docs = np.zeros((len(self.Vocab), self.D))
 		IDF = np.zeros(len(self.Vocab))
 		TFIDF_queries = np.zeros((len(self.Vocab), len(queries)))
