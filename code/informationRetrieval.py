@@ -3,17 +3,17 @@ from util import *
 # Add your import statements here
 import numpy as np
 from sklearn.decomposition import TruncatedSVD
-
+from nltk.util import ngrams
 
 
 class InformationRetrieval():
 
-	def __init__(self, LSA=True, N=400, k=2):
+	def __init__(self, LSA=True, K=480, n=2):
 		self.index = None
 		self.LSA = LSA
-		self.N = N
-		self.k = k
-
+		self.K = K
+		self.n = n
+		print(self.LSA, self.K, self.n)
 	def buildIndex(self, docs, docIDs):
 		"""
 		Builds the document index in terms of the document
@@ -37,19 +37,20 @@ class InformationRetrieval():
 
 		index = {}
 
-		if self.k > 1:
-			docs = nGramConverter(docs, self.k)
-
 		for i, doc in enumerate(docs):
 			for sent in doc:
-				for word in sent:
-					if word in index:
-						if docIDs[i] in index[word]:
-							index[word][docIDs[i]] += 1
+				tokens = []
+				for j in range(1, self.n+1):
+					tokens += list(ngrams(sent, j))
+				for token in tokens:
+					token = '_'.join(token)
+					if token in index:	
+						if docIDs[i] in index[token]:
+							index[token][docIDs[i]] += 1
 						else:
-							index[word][docIDs[i]] = 1
+							index[token][docIDs[i]] = 1
 					else:
-						index[word] = {docIDs[i] : 1} 
+						index[token] = {docIDs[i] : 1} 
 
 		self.index = index
 		self.D = len(docs)
@@ -80,8 +81,6 @@ class InformationRetrieval():
 
 		#Initialising 
 
-		if self.k > 1:
-			queries = nGramConverter(queries, self.k)
 
 		TFIDF_docs = np.zeros((len(self.Vocab), self.D))
 		IDF = np.zeros(len(self.Vocab))
@@ -99,9 +98,13 @@ class InformationRetrieval():
 		#Calculating TFIDF for Queries
 		for i, query in enumerate(queries):
 			for sent in query:
-				for word in sent:
+				tokens = []
+				for j in range(1, self.n+1):
+					tokens += list(ngrams(sent, j))
+				for token in tokens:
+					token = '_'.join(token)
 					try :
-						word_idx = self.Vocab.index(word)
+						word_idx = self.Vocab.index(token)
 						TFIDF_queries[word_idx][i] += 1
 					except:
 						pass
@@ -117,7 +120,7 @@ class InformationRetrieval():
 
 		#Dimensionality reduction using LSA
 		if self.LSA:
-			svd = TruncatedSVD(self.N)
+			svd = TruncatedSVD(self.K)
 			svd.fit(TFIDF_docs.T)
 			
 			doc_vecs = svd.transform(TFIDF_docs.T).T
