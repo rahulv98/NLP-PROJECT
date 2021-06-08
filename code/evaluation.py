@@ -6,6 +6,12 @@ from util import *
 
 
 class Evaluation():
+	def __init__(self, query_scores_req=False):
+		"""
+		If query_sccores_req is True, all the meanMetrics will output scores of each query as a list 
+		"""
+		self.query_scores_req = query_scores_req
+		
 
 	def queryPrecision(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
 		"""
@@ -69,15 +75,19 @@ class Evaluation():
 
 		#Fill in code here
 		pr_sum = 0
-
+		queryPrecisions = []
 		for i, query_id in enumerate(query_ids):
 
 			true_doc_IDs = get_true_doc_IDs(qrels, query_id)
-			pr_sum += self.queryPrecision(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			pr = self.queryPrecision(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			pr_sum += pr
+			queryPrecisions.append(pr)
 
 		meanPrecision = pr_sum / len(query_ids)		
-
-		return meanPrecision
+		if self.query_scores_req:
+			return queryPrecisions
+		else:
+			return meanPrecision
 
 
 	def queryRecall(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
@@ -143,15 +153,20 @@ class Evaluation():
 
 		#Fill in code here
 		recall_sum = 0
-		
+		queryRecalls = []
 		for i, query_id in enumerate(query_ids):
 
 			true_doc_IDs = get_true_doc_IDs(qrels, query_id)
-			recall_sum += self.queryRecall(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
-
+			recall = self.queryRecall(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			recall_sum += recall
+			queryRecalls.append(recall)
+	
 		meanRecall = recall_sum / len(query_ids)		
-
-		return meanRecall
+	
+		if self.query_scores_req:
+			return queryRecalls
+		else:
+			return meanRecall
 
 
 	def queryFscore(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
@@ -220,15 +235,20 @@ class Evaluation():
 
 		#Fill in code here
 		F_sum = 0
-		
+		queryFscores = []
 		for i, query_id in enumerate(query_ids):
 
 			true_doc_IDs = get_true_doc_IDs(qrels, query_id)
-			F_sum += self.queryFscore(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			Fscore = self.queryFscore(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			F_sum += Fscore
+			queryFscores.append(Fscore)
 
 		meanFscore = F_sum / len(query_ids)	
 
-		return meanFscore
+		if self.query_scores_req:
+			return queryFscores
+		else:
+			return meanFscore
 
 
 	def queryNDCG(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
@@ -253,14 +273,14 @@ class Evaluation():
 		float
 			The nDCG value as a number between 0 and 1
 		"""
-		#Assuming true_doc_IDs is a list of tuples [(doc_ID, position), ..]; (position is from qrels.) 
+		#Assuming true_doc_IDs is a dict {doc_ID : position, ..}; (position is from qrels.) 
 
 		nDCG = -1
 
 		#Fill in code here
-		relevance_scores = [0] * k
+		relevance_scores = [0] * len(query_doc_IDs_ordered)
 
-		for i, doc_ID in enumerate(query_doc_IDs_ordered[:k]):
+		for i, doc_ID in enumerate(query_doc_IDs_ordered):
 			if doc_ID in true_doc_IDs:
 				relevance_scores[i] = 5 - true_doc_IDs[doc_ID]
 		
@@ -310,16 +330,20 @@ class Evaluation():
 
 		#Fill in code here
 		nDCG_sum = 0
-
+		queryNDCGs = []
 		for i, query_id in enumerate(query_ids):
 
 			true_doc_IDs = get_true_doc_IDs(qrels, query_id, rel_required=True)
 
-			nDCG_sum += self.queryNDCG(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			nDCG = self.queryNDCG(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			nDCG_sum += nDCG
+			queryNDCGs.append(nDCG)
 
 		meanNDCG = nDCG_sum / len(query_ids)
-
-		return meanNDCG
+		if self.query_scores_req:
+			return queryNDCGs
+		else:
+			return meanNDCG
 
 
 	def queryAveragePrecision(self, query_doc_IDs_ordered, query_id, true_doc_IDs, k):
@@ -393,13 +417,17 @@ class Evaluation():
 
 		#Fill in code here
 		AP_sum = 0
-
+		queryAPs = []
 		for i, query_id in enumerate(query_ids):
 
 			true_doc_IDs = get_true_doc_IDs(qrels, query_id)
-			AP_sum += self.queryAveragePrecision(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			AP = self.queryAveragePrecision(doc_IDs_ordered[i], query_id, true_doc_IDs, k)
+			AP_sum += AP
+			queryAPs.append(AP)
 
 		meanAveragePrecision = AP_sum / len(query_ids)
-
-		return meanAveragePrecision
+		if self.query_scores_req:
+			return queryAPs
+		else:
+			return meanAveragePrecision
 

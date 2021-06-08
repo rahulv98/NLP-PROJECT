@@ -1,14 +1,23 @@
+from ast import parse
 from sentenceSegmentation import SentenceSegmentation
 from tokenization import Tokenization
 from inflectionReduction import InflectionReduction
 from stopwordRemoval import StopwordRemoval
 from informationRetrieval import InformationRetrieval
 from evaluation import Evaluation
+from textCleaner import TextCleaner
+from LanguageModel import NgramModel
+from util import getName
 
 from sys import version_info
 import argparse
 import json
 import matplotlib.pyplot as plt
+import re
+import numpy as np
+
+#Fixing random seed
+np.random.seed(100)
 
 # Input compatibility for Python 2 and Python 3
 if version_info.major == 3:
@@ -29,12 +38,14 @@ class SearchEngine:
 
 		self.tokenizer = Tokenization()
 		self.sentenceSegmenter = SentenceSegmentation()
+		self.textCleaner = TextCleaner()
 		self.inflectionReducer = InflectionReduction()
 		self.stopwordRemover = StopwordRemoval()
 
-		self.informationRetriever = InformationRetrieval()
+		self.informationRetriever = InformationRetrieval(LSA=args.LSA, n=args.IR_n, K=args.K)
 		self.evaluator = Evaluation()
 
+		self.LanguageModel = NgramModel(n=args.LM_n, smooth=args.LM_smooth, k=args.LM_k, m=args.LM_m)
 
 	def segmentSentences(self, text):
 		"""
@@ -60,6 +71,12 @@ class SearchEngine:
 		"""
 		return self.inflectionReducer.reduce(text)
 
+	def cleanText(self, text):
+		"""
+		Call the text cleaner
+		"""
+		return self.textCleaner.fromList(text)
+
 	def removeStopwords(self, text):
 		"""
 		Call the required stopword remover
@@ -67,7 +84,7 @@ class SearchEngine:
 		return self.stopwordRemover.fromList(text)
 
 
-	def preprocessQueries(self, queries):
+	def preprocessQueries(self, queries, for_LM=False):
 		"""
 		Preprocess the queries - segment, tokenize, stem/lemmatize and remove stopwords
 		"""
@@ -82,8 +99,14 @@ class SearchEngine:
 		tokenizedQueries = []
 		for query in segmentedQueries:
 			tokenizedQuery = self.tokenize(query)
+			if not self.args.base1:
+				tokenizedQuery = self.textCleaner.fromList(tokenizedQuery)
 			tokenizedQueries.append(tokenizedQuery)
 		json.dump(tokenizedQueries, open(self.args.out_folder + "tokenized_queries.txt", 'w'))
+
+		if for_LM:
+			return tokenizedQueries 
+
 		# Stem/Lemmatize queries
 		reducedQueries = []
 		for query in tokenizedQueries:
@@ -100,7 +123,7 @@ class SearchEngine:
 		preprocessedQueries = stopwordRemovedQueries
 		return preprocessedQueries
 
-	def preprocessDocs(self, docs):
+	def preprocessDocs(self, docs, for_LM=False):
 		"""
 		Preprocess the documents
 		"""
@@ -115,8 +138,14 @@ class SearchEngine:
 		tokenizedDocs = []
 		for doc in segmentedDocs:
 			tokenizedDoc = self.tokenize(doc)
+			if not self.args.base1:
+				tokenizedDoc = self.textCleaner.fromList(tokenizedDoc)
 			tokenizedDocs.append(tokenizedDoc)
 		json.dump(tokenizedDocs, open(self.args.out_folder + "tokenized_docs.txt", 'w'))
+
+		if for_LM:
+			return tokenizedDocs
+
 		# Stem/Lemmatize docs
 		reducedDocs = []
 		for doc in tokenizedDocs:
@@ -151,7 +180,7 @@ class SearchEngine:
 		processedQueries = self.preprocessQueries(queries)
 
 		# Read documents
-		docs_json = json.load(open(args.dataset + "cran_docs.json", 'r'))[:]
+		docs_json = json.load(open(self.args.dataset + "cran_docs.json", 'r'))[:]
 		doc_ids, docs = [item["id"] for item in docs_json], \
 								[item["body"] for item in docs_json]
 		# Process documents
@@ -161,9 +190,11 @@ class SearchEngine:
 		self.informationRetriever.buildIndex(processedDocs, doc_ids)
 		# Rank the documents for each query
 		doc_IDs_ordered = self.informationRetriever.rank(processedQueries)
+		#To use for plotting and hypothesis testing
+		json.dump(doc_IDs_ordered, open(self.args.out_folder + "preds_" + getName(self.args) + ".txt", 'w'))
 
 		# Read relevance judements
-		qrels = json.load(open(args.dataset + "cran_qrels.json", 'r'))[:]
+		qrels = json.load(open(self.args.dataset + "cran_qrels.json", 'r'))[:]
 
 		# Calculate precision, recall, f-score, MAP and nDCG for k = 1 to 10
 		precisions, recalls, fscores, MAPs, nDCGs = [], [], [], [], []
@@ -196,24 +227,137 @@ class SearchEngine:
 		plt.plot(range(1, 11), MAPs, label="MAP")
 		plt.plot(range(1, 11), nDCGs, label="nDCG")
 		plt.legend()
-		plt.title("Evaluation Metrics - Cranfield Dataset")
+		plt.title("Evaluation Metrics -" + getName(self.args))
 		plt.xlabel("k")
-		plt.savefig(args.out_folder + "eval_plot.png")
+		plt.savefig(self.args.out_folder + getName(self.args) + "_eval_plot.png")
 
-		
+	def buildLanguageModel(self):
+
+		# Read queries
+		queries_json = json.load(open(self.args.dataset + "cran_queries.json", 'r'))[:]
+		query_ids, queries = [item["query number"] for item in queries_json], \
+								[item["query"] for item in queries_json]
+		# Process queries 
+		processedQueries = self.preprocessQueries(queries, for_LM=True)
+
+		# Read documents
+		docs_json = json.load(open(self.args.dataset + "cran_docs.json", 'r'))[:]
+		doc_ids, docs = [item["id"] for item in docs_json], \
+								[item["body"] for item in docs_json]
+		# Process documents
+		processedDocs = self.preprocessDocs(docs, for_LM=True)
+
+		self.LanguageModel.buildIndex(processedDocs + processedQueries)
+
+		if self.args.perplexity:
+			print(self.LanguageModel.perplexity(processedDocs + processedQueries))
+
+
+	def LSATuning(self):
+		"""
+		-Preporcess Docs and queries
+		-Invoke the IR system with different values of latent features(K)
+		-evaluate the the model on cranfield dataset with nDCG@5 metric
+		-Plot K vs nDCG@5
+		"""
+		# Read queries
+		queries_json = json.load(open(self.args.dataset + "cran_queries.json", 'r'))[:]
+		query_ids, queries = [item["query number"] for item in queries_json], \
+								[item["query"] for item in queries_json]
+		# Process queries 
+		processedQueries = self.preprocessQueries(queries)
+
+		# Read documents
+		docs_json = json.load(open(self.args.dataset + "cran_docs.json", 'r'))[:]
+		doc_ids, docs = [item["id"] for item in docs_json], \
+								[item["body"] for item in docs_json]
+		# Process documents
+		processedDocs = self.preprocessDocs(docs)
+
+		# Read relevance judements
+		qrels = json.load(open(self.args.dataset + "cran_qrels.json", 'r'))[:]
+
+		nDCGs = []
+		search_ranges = [range(100, 1000, 50), range(200, 800, 100), range(300, 700, 100)] 
+		for k in search_ranges[self.args.IR_n - 1]:
+			print(f'Training LSA with {k} latent features for {self.args.IR_n}-gram representation')
+			#Initialise an IR system
+			IR = InformationRetrieval(LSA=True, K=k, n=self.args.IR_n)
+			
+			#Build document index
+			IR.buildIndex(processedDocs, doc_ids)
+			
+			# Rank the documents for each query
+			doc_IDs_ordered = IR.rank(processedQueries)
+
+			nDCG = self.evaluator.meanNDCG(
+				doc_IDs_ordered, query_ids, qrels, 5)
+
+			nDCGs.append(nDCG)
+
+		plt.plot(search_ranges[self.args.IR_n - 1], nDCGs, marker='x')
+		plt.title(f"K vs nDCG@5 for {self.args.IR_n}-grams")
+		plt.xlabel("K")
+		plt.ylabel("nDCG@5")
+		plt.savefig(self.args.out_folder + f"LSA_{self.args.IR_n}.png")
+		plt.cla()
+
+		nDCGs = []
+		fine_search_ranges = [range(360, 460, 5), range(360, 460, 10), range(460, 540, 20)] 
+		for k in fine_search_ranges[self.args.IR_n - 1]:
+			print(f'Training LSA with {k} latent features for {self.args.IR_n}-gram representation')
+			#Initialise an IR system
+			IR = InformationRetrieval(LSA=True, K=k, n=self.args.IR_n)
+			
+			#Build document index
+			IR.buildIndex(processedDocs, doc_ids)
+			
+			# Rank the documents for each query
+			doc_IDs_ordered = IR.rank(processedQueries)
+
+			nDCG = self.evaluator.meanNDCG(
+				doc_IDs_ordered, query_ids, qrels, 5)
+
+			nDCGs.append(nDCG)
+
+		plt.plot(fine_search_ranges[self.args.IR_n - 1], nDCGs, marker='x')
+		plt.title(f"K vs nDCG@5 for {self.args.IR_n}-grams")
+		plt.xlabel("K")
+		plt.ylabel("nDCG@5")
+		plt.savefig(self.args.out_folder + f"LSA_{self.args.IR_n}_fine.png")
+
 	def handleCustomQuery(self):
 		"""
 		Take a custom query as input and return top five relevant documents
 		"""
+		if self.args.autocomplete or self.args.spell_check:
+			self.buildLanguageModel()
 
 		#Get query
 		print("Enter query below")
 		query = input()
+
+		#Query spell checking
+		if self.args.spell_check:
+			corrected_query = self.LanguageModel.autoCorrect(query)
+			print("proposed corrected query:- ", corrected_query)
+
+			print("Enter corrected query below")
+			query = input()
+		#Query autocomplete upto m-words
+		if self.args.autocomplete:
+			pred_query = self.LanguageModel.generateSentence(query)
+			print("proposed completed query:- ", query + " " + pred_query)
+		
+
+			print("Enter complete query below")
+			query = input()
+
 		# Process documents
 		processedQuery = self.preprocessQueries([query])[0]
 
 		# Read documents
-		docs_json = json.load(open(args.dataset + "cran_docs.json", 'r'))[:]
+		docs_json = json.load(open(self.args.dataset + "cran_docs.json", 'r'))[:]
 		doc_ids, docs = [item["id"] for item in docs_json], \
 							[item["body"] for item in docs_json]
 		# Process documents
@@ -230,7 +374,6 @@ class SearchEngine:
 			print(id_)
 
 
-
 if __name__ == "__main__":
 
 	# Create an argument parser
@@ -245,17 +388,52 @@ if __name__ == "__main__":
 	                    help = "Sentence Segmenter Type [naive|punkt]")
 	parser.add_argument('-tokenizer',  default = "ptb",
 	                    help = "Tokenizer Type [naive|ptb]")
+	
+	#IR system parameters
+	parser.add_argument('-LSA', action = "store_true", 
+						help = "Use LSA method for IR")
+	parser.add_argument('-base1', action = "store_true", 
+						help = "Use baseline1 model")
+	parser.add_argument('-K',  default = None, type=int,
+	                    help = "Rank for LSA")
+	parser.add_argument('-IR_n',  default = 1, type=int,
+	                    help = "Doc representation with upto ngrams")
+	parser.add_argument('-tune_lsa', action="store_true",
+						help = "Hyperparameter Latent features tuning for LSA method")
+
+
 	parser.add_argument('-custom', action = "store_true", 
 						help = "Take custom query as input")
-	
+	parser.add_argument('-autocomplete', action = 'store_true',
+						help = "Predict complete query for inputed custom query")
+	parser.add_argument('-spell_check', action='store_true',
+						help = "Correct spellings of the custom query")
+
+	#Language Model parameters
+	parser.add_argument('-LM_k',  default = None, type=int,
+	                    help = "k value for Laplace smoothing")
+	parser.add_argument('-LM_smooth', default = None,
+						help = "Language Model Smoothing Method [None|Laplace|SGT]")
+	parser.add_argument('-LM_n',  default = 1, type=int,
+	                    help = "n for Ngram Language Model")
+	parser.add_argument('-LM_m',  default = 4, type=int,
+	                    help = "Auto complete upto m words")
+	parser.add_argument('-perplexity', action='store_true',
+						help = "Compute perplexity on same dataset")
+
 	# Parse the input arguments
 	args = parser.parse_args()
 
 	# Create an instance of the Search Engine
 	searchEngine = SearchEngine(args)
-
+	print(args)
 	# Either handle query from user or evaluate on the complete dataset 
+
+	if args.perplexity:
+		searchEngine.buildLanguageModel()
 	if args.custom:
 		searchEngine.handleCustomQuery()
+	elif args.LSA and args.tune_lsa:
+		searchEngine.LSATuning() #plots LSA vs k for the chosen model
 	else:
 		searchEngine.evaluateDataset()

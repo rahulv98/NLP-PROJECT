@@ -4,7 +4,7 @@ from util import *
 import numpy as np
 from sklearn.decomposition import TruncatedSVD
 from nltk.util import ngrams
-
+import json
 
 class InformationRetrieval():
 
@@ -13,7 +13,7 @@ class InformationRetrieval():
 		self.LSA = LSA
 		self.K = K
 		self.n = n
-		print(self.LSA, self.K, self.n)
+
 	def buildIndex(self, docs, docIDs):
 		"""
 		Builds the document index in terms of the document
@@ -55,7 +55,7 @@ class InformationRetrieval():
 		self.index = index
 		self.D = len(docs)
 		self.Vocab = list(index.keys())
-		print(self.D, len(self.Vocab))
+		# print(self.D, len(self.Vocab))
 
 	def rank(self, queries):
 		"""

@@ -2,7 +2,8 @@ from util import *
 
 # Add your import statements here
 from nltk.tokenize import RegexpTokenizer
-
+from nltk.tokenize import TreebankWordTokenizer
+import re
 
 
 class Tokenization():
@@ -49,7 +50,8 @@ class Tokenization():
 		#Fill in code here
 
 		tokenizedText = []
-		ptb = RegexpTokenizer(r'\w+')
+		# ptb = RegexpTokenizer(r'\w+')
+		ptb = TreebankWordTokenizer()
 		for sentence in text:
 			tokens = ptb.tokenize(sentence)
 			tokenizedText.append(tokens)
